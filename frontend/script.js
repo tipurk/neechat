@@ -1,5 +1,5 @@
 // frontend/script.js
-
+let currentReply = null;
 let currentChatId = null;
 let socket = null;
 const API_BASE = 'http://localhost:3000/api';
@@ -430,9 +430,18 @@ async function openChat(chatId, fallbackName) {
   currentChatId = chatId;
   updateChatView();
   document.getElementById('typingIndicator').style.display = 'none';
+
   // 🔹 Специальная обработка "Общего чата"
   if (fallbackName === 'Общий чат') {
     chatHeader.innerHTML = `<span class="chat-header-name">Общий чат</span>`;
+    // Добавляем кнопку вложений
+    const attachmentsBtn = document.createElement('button');
+    attachmentsBtn.className = 'attachments-btn';
+    attachmentsBtn.title = 'Медиафайлы';
+    attachmentsBtn.innerHTML = '🖼️';
+    attachmentsBtn.onclick = () => openAttachmentsModal(chatId);
+    chatHeader.appendChild(attachmentsBtn);
+
     messagesContainer.innerHTML = '';
     await loadMessages(chatId);
     if (socket && socket.connected) {
@@ -455,26 +464,38 @@ async function openChat(chatId, fallbackName) {
     let avatarHtml = '';
     let deleteBtnHtml = '';
 
-
     if (other) {
-      avatarHtml = `
-        <div class="avatar-with-status">
-          ${other.avatar && other.avatar.startsWith('http')
-            ? `<img src="${other.avatar}" class="chat-header-avatar" onerror="this.style.display='none'">`
-            : `<span class="chat-header-avatar-text">${other.avatar || '👤'}</span>`
-          }
-          <span class="online-status"></span>
-        </div>
-      `;
+      displayName = other.name || other.username;
+      if (other.avatar && other.avatar.startsWith('http')) {
+        avatarHtml = `<img src="${other.avatar}" class="chat-header-avatar" onerror="this.style.display='none'">`;
+      } else {
+        avatarHtml = `<span class="chat-header-avatar-text">${other.avatar || '👤'}</span>`;
+      }
+      // 🔹 Кнопка удаления — только для приватных чатов
+      deleteBtnHtml = `<button class="delete-chat-btn" onclick="deleteChat(${chatId})">×</button>`;
     }
 
-
+    // 🔹 Формируем HTML заголовка ОДИН РАЗ
     chatHeader.innerHTML = `
-      ${avatarHtml}
+      <div class="avatar-with-status">
+        ${avatarHtml}
+        <span class="online-status"></span>
+      </div>
       <span class="chat-header-name">${escapeHtml(displayName)}</span>
       ${deleteBtnHtml}
     `;
-    // Добавляем кнопку вложений ПОСЛЕ установки innerHTML
+
+    // Запрашиваем онлайн-статус
+    if (other) {
+      checkOnlineStatus(other.id).then(isOnline => {
+        const statusEl = chatHeader.querySelector('.online-status');
+        if (statusEl) {
+          statusEl.className = `online-status ${isOnline ? 'online' : ''}`;
+        }
+      });
+    }
+
+    // 🔹 Добавляем кнопку вложений ПОСЛЕ innerHTML
     const attachmentsBtn = document.createElement('button');
     attachmentsBtn.className = 'attachments-btn';
     attachmentsBtn.title = 'Медиафайлы';
@@ -482,14 +503,8 @@ async function openChat(chatId, fallbackName) {
     attachmentsBtn.onclick = () => openAttachmentsModal(chatId);
     chatHeader.appendChild(attachmentsBtn);
 
-    // Теперь запрашиваем статус
-    checkOnlineStatus(other.id).then(isOnline => {
-      const statusEl = chatHeader.querySelector('.online-status');
-      if (statusEl) {
-        statusEl.className = `online-status ${isOnline ? 'online' : ''}`;
-      }
-    });
   } catch (e) {
+    console.error('Ошибка открытия чата:', e);
     chatHeader.innerHTML = `<span>${escapeHtml(fallbackName)}</span>`;
   }
 
@@ -591,6 +606,33 @@ async function deleteMessage(messageId) {
   }
 }
 
+function startReply(message) {
+  currentReply = message;
+  
+  const replyPreview = document.getElementById('replyPreview');
+  if (replyPreview) {
+    replyPreview.remove();
+  }
+
+  const preview = document.createElement('div');
+  preview.id = 'replyPreview';
+  preview.className = 'reply-preview';
+  preview.innerHTML = `
+    <span class="reply-author">${escapeHtml(message.name || 'Пользователь')}:</span>
+    <span class="reply-text">${escapeHtml(message.text.length > 50 ? message.text.slice(0, 50) + '...' : message.text)}</span>
+    <button class="reply-cancel" onclick="cancelReply()">×</button>
+  `;
+  document.querySelector('.input-area').insertBefore(preview, messageInput);
+  
+  messageInput.focus();
+}
+
+function cancelReply() {
+  currentReply = null;
+  const preview = document.getElementById('replyPreview');
+  if (preview) preview.remove();
+}
+
 function addMessageToUI(msg) {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const isOwn = msg.user_id == currentUser.id;
@@ -601,7 +643,7 @@ function addMessageToUI(msg) {
 
   const isImage = msg.text.startsWith('/uploads/');
 
-  // 🔹 ВСЕГДА показываем имя и аватарку для чужих сообщений (включая изображения)
+  // Имя и аватарка — только для чужих сообщений
   let authorHtml = '';
   let avatarHtml = '';
 
@@ -615,35 +657,41 @@ function addMessageToUI(msg) {
     }
   }
 
+  // Превью цитаты (если это ответ)
+  let replyHtml = '';
+  if (msg.reply_to) {
+    const replyText = msg.reply_text || 'Сообщение удалено';
+    const replyName = msg.reply_name || 'Пользователь';
+    replyHtml = `
+      <div class="reply-quote">
+        <strong>${escapeHtml(replyName)}:</strong> ${escapeHtml(replyText)}
+      </div>
+    `;
+  }
+
+  // Контент сообщения
   let contentHtml = '';
   if (isImage) {
     const imgUrl = `http://localhost:3000${msg.text}`;
-    // 🔹 Добавляем data-url для открытия в модалке
-    contentHtml = `<img src="${imgUrl}" class="message-image" data-fullsize="${imgUrl}" onclick="openImageModal('${imgUrl}')">`;
+    contentHtml = `
+      <img 
+        src="${imgUrl}" 
+        class="message-image" 
+        data-fullsize="${imgUrl}"
+        data-sender="${escapeHtml(msg.name || 'Пользователь')}"
+        data-timestamp="${msg.created_at}"
+        onclick="openImageModal(this)"
+      >
+    `;
   } else {
     contentHtml = `<div class="msg-text">${escapeHtml(msg.text)}</div>`;
   }
 
+  // Кнопка удаления — только для своих
   let deleteBtn = '';
   if (isOwn) {
     deleteBtn = `<button class="delete-btn" onclick="deleteMessage(${msg.id})">×</button>`;
   }
-
-  if (isImage) {
-  const imgUrl = `http://localhost:3000${msg.text}`;
-  const timestamp = msg.created_at; // ISO-строка
-  const senderName = msg.name || 'Пользователь';
-  contentHtml = `
-    <img 
-      src="${imgUrl}" 
-      class="message-image" 
-      data-fullsize="${imgUrl}"
-      data-sender="${escapeHtml(senderName)}"
-      data-timestamp="${timestamp}"
-      onclick="openImageModal(this)"
-    >
-  `;
-}
 
   const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -651,11 +699,18 @@ function addMessageToUI(msg) {
     ${avatarHtml}
     <div class="msg-bubble">
       ${authorHtml}
+      ${replyHtml}
       ${contentHtml}
       ${isImage ? '' : `<small class="msg-time">${time}</small>`}
     </div>
     ${deleteBtn}
   `;
+
+  // Обработчик клика для ответа (игнорируем кнопку удаления)
+  el.addEventListener('dblclick', (e) => {
+    if (e.target.closest('.delete-btn, .delete-btn *')) return;
+    startReply(msg);
+  });
 
   messagesContainer.appendChild(el);
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -768,6 +823,10 @@ async function sendMessage() {
 
   // Если файла нет — отправляем текст
   if (text) {
+    const payload = { chatId: currentChatId, text };
+    if (currentReply) {
+      payload.reply_to = currentReply.id;
+    }
     try {
       const res = await fetch(`${API_BASE}/messages`, {
         method: 'POST',
@@ -775,10 +834,11 @@ async function sendMessage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ chatId: currentChatId, text })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         messageInput.value = '';
+        cancelReply(); // сбросить цитату
       }
     } catch (e) {
       alert('Не удалось отправить сообщение');

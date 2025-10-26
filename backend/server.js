@@ -306,26 +306,44 @@ app.get('/api/messages/:chatId', auth, async (req, res) => {
 
 // Отправка сообщения
 app.post('/api/messages', auth, async (req, res) => {
-  const { chatId, text } = req.body;
-  const msg = await Message.create({ chat_id: chatId, user_id: req.userId, text });
+  const { chatId, text, reply_to } = req.body;
+  const msg = await Message.create({ chat_id: chatId, user_id: req.userId, text, reply_to });
   
-  // 🔹 Получаем данные отправителя
   const sender = await User.findById(req.userId);
   
-  // 🔹 Отправляем полное сообщение через WebSocket
-  io.to(`chat_${chatId}`).emit('newMessage', {
+  // 🔹 Если есть ответ — получаем данные цитируемого сообщения
+  let reply_text = null;
+  let reply_name = null;
+  if (reply_to) {
+    const db = require('./db/database');
+    const replyMsg = await new Promise((resolve, reject) => {
+      db.get(`
+        SELECT m.text, u.name 
+        FROM messages m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.id = ?
+      `, [reply_to], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    if (replyMsg) {
+      reply_text = replyMsg.text;
+      reply_name = replyMsg.name;
+    }
+  }
+
+  const fullMsg = {
     ...msg,
     name: sender.name,
     avatar: sender.avatar,
-    user_id: sender.id
-  });
+    user_id: sender.id,
+    reply_text,   // ← добавлено
+    reply_name    // ← добавлено
+  };
   
-  res.json({
-    ...msg,
-    name: sender.name,
-    avatar: sender.avatar,
-    user_id: sender.id
-  });
+  io.to(`chat_${chatId}`).emit('newMessage', fullMsg);
+  res.json(fullMsg);
 });
 
 app.get('/api/users', auth, async (req, res) => {

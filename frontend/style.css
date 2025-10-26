@@ -489,6 +489,53 @@ body.dark-theme .online-status {
   background: #0088cc;
 }
 
+.reply-preview {
+  display: flex;
+  align-items: center;
+  background: #f0f0f0;
+  padding: 6px 12px;
+  border-radius: 12px 12px 0 0;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+body.dark-theme .reply-preview {
+  background: #3a3a3a;
+}
+
+.reply-author {
+  font-weight: bold;
+  margin-right: 6px;
+}
+
+.reply-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reply-cancel {
+  background: none;
+  border: none;
+  color: #999;
+  font-weight: bold;
+  margin-left: 8px;
+  cursor: pointer;
+}
+
+.reply-quote {
+  background: #e0e0e0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+body.dark-theme .reply-quote {
+  background: #2a2a2a;
+}
+
 /* Кнопки удаления */
 .delete-btn {
   float: right;

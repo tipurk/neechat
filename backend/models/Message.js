@@ -31,10 +31,17 @@ class Message {
   static async getByChat(chatId) {
     return new Promise((resolve, reject) => {
       db.all(
-        `SELECT m.*, u.name, u.avatar FROM messages m
-         JOIN users u ON m.user_id = u.id
-         WHERE m.chat_id = ?
-         ORDER BY m.created_at ASC`,
+        `SELECT 
+          m.id, m.chat_id, m.user_id, m.text, m.reply_to, m.created_at,
+          u.name, u.avatar,
+          rm.text AS reply_text,
+          ru.name AS reply_name
+        FROM messages m
+        JOIN users u ON m.user_id = u.id
+        LEFT JOIN messages rm ON m.reply_to = rm.id
+        LEFT JOIN users ru ON rm.user_id = ru.id
+        WHERE m.chat_id = ?
+        ORDER BY m.created_at ASC`,
         [chatId],
         (err, rows) => {
           if (err) reject(err);
