@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  messenger:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/db:/app/backend/db
+    restart: unless-stopped

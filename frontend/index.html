@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Nee-chat</title>
+  <link rel="icon" href="https://i.pinimg.com/736x/af/49/ef/af49ef1744be6db97bea0801e24fa413.jpg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Экран входа -->
+  <div id="loginScreen" class="auth-screen">
+    <div class="auth-form">
+      <h2>Вход</h2>
+      <input type="text" id="loginUsername" placeholder="Логин" />
+      <input type="password" id="loginPassword" placeholder="Пароль" />
+      <button onclick="handleLogin()">Войти</button>
+      <p>Нет аккаунта? <a href="#" onclick="showRegisterForm(); return false;">Зарегистрироваться</a></p>
+    </div>
+
+    <div id="registerForm" class="auth-form" style="display:none;">
+      <h2>Регистрация</h2>
+      <input type="text" id="regName" placeholder="Ваше имя" />
+      <input type="text" id="regUsername" placeholder="Логин" />
+      <input type="password" id="regPassword" placeholder="Пароль" />
+      <button onclick="handleRegister()">Зарегистрироваться</button>
+      <p>Уже есть аккаунт? <a href="#" onclick="showLoginForm(); return false;">Войти</a></p>
+    </div>
+  </div>
+
+  <!-- Основное приложение -->
+  <div id="appScreen" class="app" style="display:none;">
+    <div class="sidebar">
+      <div class="profile-header" id="profileHeader" onclick="openProfileModal()">👤 Пользователь</div>
+      <div class="chat-list" id="chatList"></div>
+      <div class="settings-btn" onclick="openNewChatModal()">➕ Новый чат</div>
+      <div class="settings-btn" onclick="openSettings()">⚙️ Настройки</div>
+      <div class="settings-btn" onclick="logout()">🚪 Выйти</div>
+    </div>
+
+    <div class="main">
+      <div class="chat-header" id="chatHeader">Nee-chat</div>
+      <div id="typingIndicator" class="typing-indicator">Собеседник печатает…</div>
+      <div class="messages" id="messages"></div>
+      <div class="input-area">
+        <input type="text" id="messageInput" placeholder="Сообщение..."/>
+        <label class="attach-btn" title="Прикрепить файл">
+          📎
+          <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)" />
+        </label>
+        <button onclick="sendMessage()">➤</button>
+      </div>
+    </div>
+
+    <!-- Модалки -->
+    <!-- Профиль -->
+    <div class="modal" id="profileModal">
+      <div class="modal-content">
+        <h3>Редактировать профиль</h3>
+        <label>
+          Имя
+          <input type="text" id="profileName" placeholder="Ваше имя" />
+        </label>
+        <label>
+          Аватар (эмодзи или URL изображения)
+          <input type="url" id="profileAvatar" placeholder="https://example.com/avatar.jpg или 👤" />
+        </label>
+        <button onclick="saveProfile()">Сохранить</button>
+        <button class="secondary" onclick="closeModal('profileModal')">Отмена</button>
+      </div>
+    </div>
+
+    <!-- Настройки -->
+    <div class="modal" id="settingsModal">
+      <div class="modal-content">
+        <h3>Настройки</h3>
+        <label>
+          <input type="checkbox" id="notifCheck" /> Уведомления
+        </label>
+        <label>
+          Тема
+          <select id="themeSelect">
+            <option value="light">Светлая</option>
+            <option value="dark">Тёмная</option>
+          </select>
+        </label>
+        <button onclick="saveSettings()">Применить</button>
+        <button class="secondary" onclick="closeModal('settingsModal')">Отмена</button>
+      </div>
+    </div>
+    <!-- Создание нового чата -->
+    <div class="modal" id="newChatModal">
+      <div class="modal-content">
+        <h3>Новый чат</h3>
+        <div id="usersList"></div>
+        <button class="secondary" onclick="closeModal('newChatModal')">Отмена</button>
+      </div>
+    </div>
+
+    <!-- Модалка для просмотра изображения -->
+    <div class="image-viewer-modal" id="imageModal" onclick="closeImageModal()">
+      <div class="image-viewer-content" onclick="event.stopPropagation()">
+        <img id="fullImage" src="" alt="...">
+        <div class="image-info" id="imageInfo"></div>
+      </div>
+      <button class="image-viewer-close" onclick="closeImageModal()">✕</button>
+      <button class="image-viewer-nav" id="modalPrevBtn" onclick="showPrevImage(event)">‹</button>
+      <button class="image-viewer-nav" id="modalNextBtn" onclick="showNextImage(event)">›</button>
+    </div>
+
+    <!-- Модалка вложений -->
+    <div class="modal" id="attachmentsModal">
+      <div class="modal-content">
+        <h3>Медиафайлы</h3>
+        <div id="attachmentsGrid" class="attachments-grid"></div>
+        <button class="secondary" onclick="closeModal('attachmentsModal')">Закрыть</button>
+      </div>
+    </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
