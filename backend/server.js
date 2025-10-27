@@ -44,7 +44,7 @@ const io = socketIo(server, {
 });
 
 app.use(cors({
-  origin: "https://deeply-venerable-wigeon.cloudpub.ru", // замените на ваш домен
+  origin: "https://nee-chat.cloudpub.ru", // замените на ваш домен
   credentials: true // если используете куки
 }));
 app.use(express.json());
@@ -114,7 +114,7 @@ app.post('/api/profile', auth, async (req, res) => {
   res.json(updated);
 });
 
-// Удалить чат (только если приватный и пользователь — участник)
+// Удалить чат (только если приватный и не "Общий чат")
 // Удалить чат (только если приватный и не "Общий чат")
 app.delete('/api/chats/:id', auth, async (req, res) => {
   const chatId = req.params.id;
@@ -122,7 +122,7 @@ app.delete('/api/chats/:id', auth, async (req, res) => {
   const db = require('./db/database');
 
   try {
-    // Получаем данные чата
+    // Получаем данные чата и его участников
     const chat = await new Promise((resolve, reject) => {
       db.get(`
         SELECT c.id, c.name, c.is_group
@@ -137,7 +137,7 @@ app.delete('/api/chats/:id', auth, async (req, res) => {
 
     if (!chat) return res.status(404).json({ error: 'Чат не найден' });
 
-    // 🔒 Запрещаем удалять "Общий чат"
+    // 🔹 Запрещаем удалять "Общий чат"
     if (chat.name === 'Общий чат') {
       return res.status(403).json({ error: 'Нельзя удалить общий чат' });
     }
@@ -145,6 +145,16 @@ app.delete('/api/chats/:id', auth, async (req, res) => {
     if (chat.is_group) {
       return res.status(400).json({ error: 'Нельзя удалять групповые чаты' });
     }
+
+    // 🔹 Получаем участников чата, чтобы отправить им уведомление
+    const members = await new Promise((resolve, reject) => {
+      db.all(`
+        SELECT user_id FROM chat_members WHERE chat_id = ?
+      `, [chatId], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.map(r => r.user_id));
+      });
+    });
 
     // Удаляем чат и всё связанное
     await new Promise((resolve, reject) => {
@@ -166,10 +176,96 @@ app.delete('/api/chats/:id', auth, async (req, res) => {
       });
     });
 
+    // 🔹 Отправляем уведомление всем участникам чата (кроме удалившего)
+    members.forEach(memberId => {
+      if (memberId !== userId) {
+        io.to(`user_${memberId}`).emit('chatDeleted', { chatId });
+      }
+    });
+
     res.json({ success: true });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Ошибка удаления чата' });
+  }
+});
+
+  app.get('/api/chats/unread-counts', auth, async (req, res) => {
+    const userId = req.userId;
+    const db = require('./db/database');
+
+    try {
+      const counts = await new Promise((resolve, reject) => {
+        db.all(`
+          SELECT 
+            c.id AS chat_id,
+            COUNT(m.id) AS unread_count
+          FROM chats c
+          JOIN chat_members cm ON c.id = cm.chat_id
+          LEFT JOIN user_chat_read_status rcs ON c.id = rcs.chat_id AND rcs.user_id = ?
+          LEFT JOIN messages m ON m.chat_id = c.id
+            AND (rcs.last_read_message_id IS NULL OR m.id > rcs.last_read_message_id)
+          WHERE cm.user_id = ?
+          GROUP BY c.id
+        `, [userId, userId], (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        });
+      });
+
+      const result = {};
+      counts.forEach(row => {
+        result[row.chat_id] = row.unread_count;
+      });
+
+      res.json(result);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: 'Ошибка загрузки счётчиков' });
+    }
+  });
+  
+app.post('/api/chats/:id/mark-as-read', auth, async (req, res) => {
+  const chatId = req.params.id;
+  const userId = req.userId;
+  const db = require('./db/database');
+
+  try {
+    // Получаем ID последнего сообщения в чате
+    const lastMsg = await new Promise((resolve, reject) => {
+      db.get('SELECT id FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1', [chatId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+
+    if (!lastMsg) {
+      // Если нет сообщений — просто вставим NULL
+      await new Promise((resolve, reject) => {
+        db.run(`
+          INSERT OR REPLACE INTO user_chat_read_status (user_id, chat_id, last_read_message_id)
+          VALUES (?, ?, NULL)
+        `, [userId, chatId], (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    } else {
+      await new Promise((resolve, reject) => {
+        db.run(`
+          INSERT OR REPLACE INTO user_chat_read_status (user_id, chat_id, last_read_message_id)
+          VALUES (?, ?, ?)
+        `, [userId, chatId, lastMsg.id], (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Ошибка обновления статуса' });
   }
 });
 
@@ -259,17 +355,17 @@ app.post('/api/messages/image', auth, upload.single('file'), async (req, res) =>
     return res.status(400).json({ error: 'Файл не загружен' });
   }
 
-  const { chatId } = req.body;
+  const { chatId, reply_to } = req.body; // добавим поддержку ответа на изображение
   const userId = req.userId;
   const filePath = `/uploads/${req.file.filename}`;
 
   try {
-    // Сохраняем в БД
+    // Сохраняем сообщение
     const db = require('./db/database');
     const msgId = await new Promise((resolve, reject) => {
       db.run(
-        'INSERT INTO messages (chat_id, user_id, text, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
-        [chatId, userId, filePath],
+        'INSERT INTO messages (chat_id, user_id, text, reply_to) VALUES (?, ?, ?, ?)',
+        [chatId, userId, filePath, reply_to || null],
         function (err) {
           if (err) reject(err);
           else resolve(this.lastID);
@@ -277,22 +373,74 @@ app.post('/api/messages/image', auth, upload.single('file'), async (req, res) =>
       );
     });
 
-    // 🔹 Получаем данные отправителя
+    // Получаем данные отправителя
     const sender = await User.findById(userId);
 
-    // 🔹 Формируем полное сообщение
-    const fullMessage = {
+    // Получаем данные цитируемого сообщения (если есть)
+    let reply_text = null;
+    let reply_name = null;
+    if (reply_to) {
+      const replyMsg = await new Promise((resolve, reject) => {
+        db.get(`
+          SELECT m.text, u.name 
+          FROM messages m
+          JOIN users u ON m.user_id = u.id
+          WHERE m.id = ?
+        `, [reply_to], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+      if (replyMsg) {
+        reply_text = replyMsg.text;
+        reply_name = replyMsg.name;
+      }
+    }
+
+    // Полное сообщение для отправки
+    const fullMsg = {
       id: msgId,
       chat_id: chatId,
       user_id: userId,
       text: filePath,
       created_at: new Date().toISOString(),
       name: sender.name,
-      avatar: sender.avatar
+      avatar: sender.avatar,
+      reply_to,
+      reply_text,
+      reply_name
     };
 
-    // 🔹 Отправляем через WebSocket
-    io.to(`chat_${chatId}`).emit('newMessage', fullMessage);
+    // Отправляем сообщение в чат через WebSocket
+    io.to(`chat_${chatId}`).emit('newMessage', fullMsg);
+
+    // 🔹 Рассылка счётчиков непрочитанных (для всех, кроме отправителя)
+    const members = await new Promise((resolve, reject) => {
+      db.all('SELECT user_id FROM chat_members WHERE chat_id = ?', [chatId], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.map(r => r.user_id));
+      });
+    });
+
+    for (const memberId of members) {
+      if (memberId !== userId) { // не отправителю
+        // Получаем счётчик непрочитанных для этого пользователя
+        const count = await new Promise((resolve, reject) => {
+          db.get(`
+            SELECT COUNT(m.id) AS unread_count
+            FROM messages m
+            LEFT JOIN user_chat_read_status rcs ON m.chat_id = rcs.chat_id AND rcs.user_id = ?
+            WHERE m.chat_id = ? AND (rcs.last_read_message_id IS NULL OR m.id > rcs.last_read_message_id)
+          `, [memberId, chatId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row?.unread_count || 0);
+          });
+        });
+
+        // Отправляем обновление счётчика
+        io.to(`user_${memberId}`).emit('unreadCountUpdated', { chatId, count });
+      }
+    }
 
     res.json({ success: true });
   } catch (e) {
@@ -310,43 +458,84 @@ app.get('/api/messages/:chatId', auth, async (req, res) => {
 // Отправка сообщения
 app.post('/api/messages', auth, async (req, res) => {
   const { chatId, text, reply_to } = req.body;
-  const msg = await Message.create({ chat_id: chatId, user_id: req.userId, text, reply_to });
-  
-  const sender = await User.findById(req.userId);
-  
-  // 🔹 Если есть ответ — получаем данные цитируемого сообщения
-  let reply_text = null;
-  let reply_name = null;
-  if (reply_to) {
+  const userId = req.userId;
+
+  try {
+    // Сохраняем сообщение
+    const msg = await Message.create({ chat_id: chatId, user_id: userId, text, reply_to });
+
+    // Получаем данные отправителя
+    const sender = await User.findById(userId);
+
+    // Получаем данные цитируемого сообщения (если есть)
+    let reply_text = null;
+    let reply_name = null;
+    if (reply_to) {
+      const db = require('./db/database');
+      const replyMsg = await new Promise((resolve, reject) => {
+        db.get(`
+          SELECT m.text, u.name 
+          FROM messages m
+          JOIN users u ON m.user_id = u.id
+          WHERE m.id = ?
+        `, [reply_to], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+      if (replyMsg) {
+        reply_text = replyMsg.text;
+        reply_name = replyMsg.name;
+      }
+    }
+
+    // Полное сообщение для отправки
+    const fullMsg = {
+      ...msg,
+      name: sender.name,
+      avatar: sender.avatar,
+      user_id: sender.id,
+      reply_text,
+      reply_name
+    };
+
+    // Отправляем сообщение в чат через WebSocket
+    io.to(`chat_${chatId}`).emit('newMessage', fullMsg);
+
+    // 🔹 Рассылка счётчиков непрочитанных (для всех, кроме отправителя)
     const db = require('./db/database');
-    const replyMsg = await new Promise((resolve, reject) => {
-      db.get(`
-        SELECT m.text, u.name 
-        FROM messages m
-        JOIN users u ON m.user_id = u.id
-        WHERE m.id = ?
-      `, [reply_to], (err, row) => {
+    const members = await new Promise((resolve, reject) => {
+      db.all('SELECT user_id FROM chat_members WHERE chat_id = ?', [chatId], (err, rows) => {
         if (err) reject(err);
-        else resolve(row);
+        else resolve(rows.map(r => r.user_id));
       });
     });
-    if (replyMsg) {
-      reply_text = replyMsg.text;
-      reply_name = replyMsg.name;
-    }
-  }
 
-  const fullMsg = {
-    ...msg,
-    name: sender.name,
-    avatar: sender.avatar,
-    user_id: sender.id,
-    reply_text,   // ← добавлено
-    reply_name    // ← добавлено
-  };
-  
-  io.to(`chat_${chatId}`).emit('newMessage', fullMsg);
-  res.json(fullMsg);
+    for (const memberId of members) {
+      if (memberId !== userId) { // не отправителю
+        // Получаем счётчик непрочитанных для этого пользователя
+        const count = await new Promise((resolve, reject) => {
+          db.get(`
+            SELECT COUNT(m.id) AS unread_count
+            FROM messages m
+            LEFT JOIN user_chat_read_status rcs ON m.chat_id = rcs.chat_id AND rcs.user_id = ?
+            WHERE m.chat_id = ? AND (rcs.last_read_message_id IS NULL OR m.id > rcs.last_read_message_id)
+          `, [memberId, chatId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row?.unread_count || 0);
+          });
+        });
+
+        // Отправляем обновление счётчика
+        io.to(`user_${memberId}`).emit('unreadCountUpdated', { chatId, count });
+      }
+    }
+
+    res.json(fullMsg);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Ошибка сохранения сообщения' });
+  }
 });
 
 app.get('/api/users', auth, async (req, res) => {
@@ -364,6 +553,7 @@ app.get('/api/users', auth, async (req, res) => {
   }
 });
 
+// Создать личный чат с другим пользователем
 // Создать личный чат с другим пользователем
 app.post('/api/chats/private', auth, async (req, res) => {
   const { userId: targetUserId } = req.body;
@@ -393,7 +583,9 @@ app.post('/api/chats/private', auth, async (req, res) => {
     }
 
     // Создаём новый чат
-    const chatName = `Чат с пользователем ${targetUserId}`;
+    // Получаем имя собеседника
+    const targetUser = await User.findById(targetUserId);
+    const chatName = targetUser ? `${targetUser.name || targetUser.username}` : `Чат с пользователем ${targetUserId}`;
     const chatId = await new Promise((resolve, reject) => {
       db.run('INSERT INTO chats (name, is_group) VALUES (?, 0)', [chatName], function (err) {
         if (err) reject(err);
@@ -413,6 +605,13 @@ app.post('/api/chats/private', auth, async (req, res) => {
         if (err) reject(err);
         else resolve();
       });
+    });
+
+    // 🔹 Отправляем уведомление пользователю, с которым создали чат
+    io.to(`user_${targetUserId}`).emit('newChatCreated', {
+      id: chatId,
+      name: chatName,
+      is_group: false
     });
 
     res.json({ id: chatId, name: chatName, is_group: false });
@@ -459,6 +658,8 @@ io.on('connection', (socket) => {
   console.log('Пользователь подключён:', socket.userId);
 
   User.setOnline(socket.userId);
+
+  socket.join(`user_${socket.userId}`);
 
   socket.on('joinChat', (chatId) => {
     socket.join(`chat_${chatId}`);

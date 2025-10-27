@@ -71,4 +71,5 @@ static async setOnline(id) {
 
 
 
+
 module.exports = User;

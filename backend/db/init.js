@@ -16,6 +16,18 @@ function initDatabase() {
         last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     `);
+    
+    db.run(`
+      CREATE TABLE IF NOT EXISTS user_chat_read_status (
+        user_id INTEGER NOT NULL,
+        chat_id INTEGER NOT NULL,
+        last_read_message_id INTEGER,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+        FOREIGN KEY(last_read_message_id) REFERENCES messages(id) ON DELETE SET NULL,
+        PRIMARY KEY(user_id, chat_id)
+      )
+    `);
 
     db.run(`
       CREATE TABLE IF NOT EXISTS chats (
