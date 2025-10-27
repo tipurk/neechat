@@ -547,12 +547,12 @@ async function openAttachmentsModal(chatId) {
     } else {
       images.forEach(msg => {
         const img = document.createElement('img');
-        img.src = `http://localhost:3000${msg.text}`;
+        img.src = `https://deeply-venerable-wigeon.cloudpub.ru${msg.text}`;
         img.onclick = () => {
           // Имитируем клик по изображению в чате
           const fakeImg = {
             dataset: {
-              fullsize: `http://localhost:3000${msg.text}`,
+              fullsize: `https://deeply-venerable-wigeon.cloudpub.ru${msg.text}`,
               sender: msg.name || 'Пользователь',
               timestamp: msg.created_at
             }
@@ -673,7 +673,7 @@ function addMessageToUI(msg) {
   // Контент сообщения
   let contentHtml = '';
   if (isImage) {
-    const imgUrl = `http://localhost:3000${msg.text}`;
+    const imgUrl = `https://deeply-venerable-wigeon.cloudpub.ru${msg.text}`;
     contentHtml = `
       <img 
         src="${imgUrl}" 
