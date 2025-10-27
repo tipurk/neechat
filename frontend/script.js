@@ -2,8 +2,9 @@
 let currentReply = null;
 let currentChatId = null;
 let socket = null;
-const API_BASE = 'http://localhost:3000/api';
-const WS_URL = 'http://localhost:3000';
+// frontend/script.js
+const API_BASE = '/api'; // будет использовать тот же протокол и домен, что и сайт
+const WS_URL = window.location.origin; // например, https://your-domain.com
 
 // DOM элементы
 const loginScreen = document.getElementById('loginScreen');

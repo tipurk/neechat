@@ -43,7 +43,10 @@ const io = socketIo(server, {
   cors: { origin: "*" }
 });
 
-app.use(cors());
+app.use(cors({
+  origin: "https://deeply-venerable-wigeon.cloudpub.ru", // замените на ваш домен
+  credentials: true // если используете куки
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
 

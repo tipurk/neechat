@@ -1,9 +1,26 @@
+# docker-compose.yml
 version: '3.8'
+
 services:
-  messenger:
+  backend:
     build: .
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
     volumes:
       - ./backend/db:/app/backend/db
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "80:80"  # или "443:443" если SSL
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./uploads:/app/uploads:ro
+    depends_on:
+      - backend
     restart: unless-stopped
