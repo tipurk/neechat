@@ -376,6 +376,7 @@ body.dark-theme .chat-header-avatar {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
 }
 .message {
   display: flex;
@@ -526,8 +527,8 @@ body.dark-theme .upload-text {
 }
 
 .avatar-img {
-  width: 80px;
-  height: 80px;
+  width: 120px;
+  height: 120px;
   border-radius: 50%;
   object-fit: cover;
   vertical-align: middle;
@@ -844,125 +845,125 @@ body.dark-theme .upload-text {
 
 /* Тёмная тема */
 body.dark-theme {
-  background-color: #111b21;
-  color: #d1d7db;
+  background-color: #1a1a1a;
+  color: #dcdcdc;
 }
 
 body.dark-theme .app {
-  background-color: #111b21;
+  background-color: #1a1a1a;
 }
 
 body.dark-theme .sidebar {
-  background: #111b21;
-  border-right-color: #222d34;
+  background: #1a1a1a;
+  border-right-color: #2d2d2d;
 }
 
 body.dark-theme .profile-header {
-  background: #222d34;
-  color: #e9edef;
-  border-bottom-color: #222d34;
+  background: #2d2d2d;
+  color: #f0f0f0;
+  border-bottom-color: #2d2d2d;
 }
 
 body.dark-theme .chat-item {
-  color: #e9edef;
-  border-bottom-color: #222d34;
+  color: #f0f0f0;
+  border-bottom-color: #2d2d2d;
 }
 
 body.dark-theme .chat-item:hover {
-  background: #222d34;
+  background: #2d2d2d;
 }
 
 body.dark-theme .chat-item-content strong {
-  color: #e9edef;
+  color: #f0f0f0;
 }
 
 body.dark-theme .chat-item-content small {
-  color: #8696a0;
+  color: #a0a0a0;
 }
 
 body.dark-theme .settings-btn {
-  color: #8696a0;
+  color: #a0a0a0;
 }
 
 body.dark-theme .settings-btn:hover {
-  background: #222d34;
+  background: #2d2d2d;
 }
 
 body.dark-theme .main {
-  background: #0b141a;
+  background: #121212;
 }
 
 body.dark-theme .chat-header {
-  background: #222d34;
-  color: #e9edef;
-  border-bottom-color: #222d34;
+  background: #2d2d2d;
+  color: #f0f0f0;
+  border-bottom-color: #2d2d2d;
 }
 
 body.dark-theme .input-area {
-  background: #222d34;
-  border-top-color: #222d34;
+  background: #2d2d2d;
+  border-top-color: #2d2d2d;
 }
 
 body.dark-theme .input-area input[type="text"] {
-  background: #333c45;
-  color: #e9edef;
+  background: #3a3a3a;
+  color: #f0f0f0;
 }
 
 body.dark-theme .input-area .attach-btn,
 body.dark-theme .input-area button {
-  background: #333c45;
-  color: #8696a0;
+  background: #3a3a3a;
+  color: #a0a0a0;
 }
 
 body.dark-theme .input-area .attach-btn:hover,
 body.dark-theme .input-area button:hover {
-  background: #444c55;
+  background: #4a4a4a;
 }
 
 body.dark-theme .messages {
-  background: #0b141a;
+  background: #121212;
 }
 
 body.dark-theme .message.in .msg-bubble {
-  background: #222d34;
-  color: #e9edef;
+  background: #2d2d2d;
+  color: #f0f0f0;
 }
 
 body.dark-theme .message.out .msg-bubble {
-  background: #005c4b;
-  color: #e9edef;
+  background: #3a3a3a;
+  color: #f0f0f0;
 }
 
 body.dark-theme .message-author {
-  color: #54c5a6;
+  color: #a0a0a0;
 }
 
 body.dark-theme .reply-quote {
   background: rgba(255, 255, 255, 0.05);
-  border-left-color: #54c5a6;
+  border-left-color: #a0a0a0;
 }
 
 body.dark-theme .auth-screen {
-  background: #111b21;
+  background: #1a1a1a;
 }
 
 body.dark-theme .auth-form {
-  background: #1e2930;
-  color: #e9edef;
+  background: #242424;
+  color: #f0f0f0;
 }
 
 body.dark-theme .auth-form input {
-  background: #333c45;
-  color: #e9edef;
-  border-color: #333c45;
+  background: #3a3a3a;
+  color: #f0f0f0;
+  border-color: #3a3a3a;
 }
 
 body.dark-theme .auth-form button {
-  background: #0088cc;
+  background: #5a5a5a;
 }
 
 body.dark-theme .auth-form a {
-  color: #54c5a6;
+  color: #a0a0a0;
 }
 
 body.dark-theme .modal {
@@ -970,25 +971,36 @@ body.dark-theme .modal {
 }
 
 body.dark-theme .modal-content {
-  background: #1e2930;
-  color: #e9edef;
+  background: #242424;
+  color: #f0f0f0;
 }
 
 body.dark-theme .modal input,
 body.dark-theme .modal select {
-  background: #333c45;
-  color: #e9edef;
-  border-color: #333c45;
+  background: #3a3a3a;
+  color: #f0f0f0;
+  border-color: #3a3a3a;
 }
 
 body.dark-theme .modal button {
-  background: #0088cc;
+  background: #5a5a5a;
   color: white;
 }
 
 body.dark-theme .modal button.secondary {
-  background: #333c45;
-  color: #e9edef;
+  background: #3a3a3a;
+  color: #f0f0f0;
+}
+
+/* Цвета для сообщений в темной теме */
+body.dark-theme .message.out .msg-bubble {
+  background: #5a5a5a;
+  color: #f0f0f0;
+}
+
+body.dark-theme .message.in .msg-bubble {
+  background: #2d2d2d;
+  color: #f0f0f0;
 }
 
 /* Анимации */
@@ -1096,4 +1108,27 @@ body.dark-theme .online-status {
   .chat-header-name {
     flex: 1;
   }
+}
+
+/* Индикатор области перетаскивания */
+.messages.drag-over {
+  border: 2px dashed #007bff; /* Синий пунктир */
+  background-color: rgba(0, 123, 255, 0.1); /* Легкий синий фон */
+}
+
+/* Или, если вы хотите, чтобы индикатор был поверх всех сообщений */
+.messages.drag-over::before {
+  content: "Перетащите изображение сюда";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 20px;
+  border: 2px dashed #007bff;
+  border-radius: 5px;
+  font-size: 16px;
+  color: #007bff;
+  pointer-events: none; /* Чтобы не мешало кликам */
+  z-index: 1000;
 }

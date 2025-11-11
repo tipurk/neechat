@@ -1,4 +1,5 @@
 // backend/server.js
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -7,30 +8,41 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const multer = require('multer');
-const fs = require('fs');
+const fs = require('fs'); // Добавляем fs
 
-// Папка для загрузок
-const UPLOADS_DIR = path.join(__dirname, '../uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+// --- НАЧАЛО: ЗАМЕНА GitHub Pages на ЛОКАЛЬНУЮ ПАПКУ ---
+const uploadDir = path.join(__dirname, '../frontend/uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Multer сохраняет файлы во временный буфер в памяти
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Функция для загрузки файла на сервер и получения URL
+async function uploadFileToServer(fileBuffer, fileName) {
+  const filePath = path.join(uploadDir, fileName); // Полный путь к файлу
+
+  return new Promise((resolve, reject) => {
+    fs.writeFile(filePath, fileBuffer, (err) => {
+      if (err) {
+        console.error('Ошибка записи файла:', err);
+        reject(new Error('Ошибка записи файла'));
+      } else {
+        // URL для доступа через сервер (относительный путь)
+        // Так как frontend served from /, то /uploads/... будет доступен
+        const publicUrl = `/uploads/${fileName}`;
+        resolve(publicUrl);
+      }
+    });
+  });
+}
+// --- КОНЕЦ: ЗАМЕНА GitHub Pages на ЛОКАЛЬНУЮ ПАПКУ ---
 
 // Подключаем и инициализируем БД
 require('./db/database'); // просто подключение
 const { initDatabase } = require('./db/init');
 initDatabase(); // создаём таблицы
-
-// Настройка multer
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOADS_DIR);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const name = Date.now() + '-' + Math.round(Math.random() * 1E9) + ext;
-    cb(null, name);
-  }
-});
-
-const upload = multer({ storage });
 
 // Модели
 const User = require('./models/User');
@@ -49,9 +61,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
-
-// После инициализации Express
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // JWT secret
 const JWT_SECRET = 'mini_messenger_secret_2025';
@@ -190,13 +199,14 @@ app.delete('/api/chats/:id', auth, async (req, res) => {
   }
 });
 
-  app.get('/api/chats/unread-counts', auth, async (req, res) => {
-    const userId = req.userId;
-    const db = require('./db/database');
 
-    try {
-      const counts = await new Promise((resolve, reject) => {
-        db.all(`
+app.get('/api/chats/unread-counts', auth, async (req, res) => {
+  const userId = req.userId;
+  const db = require('./db/database');
+
+  try {
+    const counts = await new Promise((resolve, reject) => {
+      db.all(`
           SELECT 
             c.id AS chat_id,
             COUNT(m.id) AS unread_count
@@ -208,23 +218,23 @@ app.delete('/api/chats/:id', auth, async (req, res) => {
           WHERE cm.user_id = ?
           GROUP BY c.id
         `, [userId, userId], (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        });
+        if (err) reject(err);
+        else resolve(rows);
       });
+    });
 
-      const result = {};
-      counts.forEach(row => {
-        result[row.chat_id] = row.unread_count;
-      });
+    const result = {};
+    counts.forEach(row => {
+      result[row.chat_id] = row.unread_count;
+    });
 
-      res.json(result);
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: 'Ошибка загрузки счётчиков' });
-    }
-  });
-  
+    res.json(result);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Ошибка загрузки счётчиков' });
+  }
+});
+
 app.post('/api/chats/:id/mark-as-read', auth, async (req, res) => {
   const chatId = req.params.id;
   const userId = req.userId;
@@ -323,7 +333,7 @@ app.delete('/api/messages/:id', auth, async (req, res) => {
   try {
     // Проверяем, что сообщение принадлежит пользователю
     const msg = await new Promise((resolve, reject) => {
-      db.get('SELECT user_id FROM messages WHERE id = ?', [messageId], (err, row) => {
+      db.get('SELECT user_id, text FROM messages WHERE id = ?', [messageId], (err, row) => {
         if (err) reject(err);
         else resolve(row);
       });
@@ -332,7 +342,24 @@ app.delete('/api/messages/:id', auth, async (req, res) => {
     if (!msg) return res.status(404).json({ error: 'Сообщение не найдено' });
     if (msg.user_id !== userId) return res.status(403).json({ error: 'Нельзя удалять чужие сообщения' });
 
-    // Удаляем
+    // --- НАЧАЛО: Изменения для Локального Хранения ---
+    // Проверяем, является ли сообщение локальным изображением
+    if (msg.text.startsWith('/uploads/')) {
+      const filePath = path.join(__dirname, '../frontend', msg.text);
+      // Проверяем, существует ли файл перед удалением
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath); // Удаляем файл
+          console.log(`Удалён файл: ${filePath}`);
+        } catch (fsErr) {
+          console.error(`Ошибка при удалении файла ${filePath}:`, fsErr);
+          // Продолжаем, даже если не удалось удалить файл
+        }
+      }
+    }
+    // --- КОНЕЦ: Изменения для Локального Хранения ---
+
+    // Удаляем из базы данных
     await new Promise((resolve, reject) => {
       db.run('DELETE FROM messages WHERE id = ?', [messageId], (err) => {
         if (err) reject(err);
@@ -341,7 +368,7 @@ app.delete('/api/messages/:id', auth, async (req, res) => {
     });
 
     // Уведомляем через WebSocket (опционально)
-    // Можно отправить событие 'messageDeleted'
+    // io.to(`chat_${msg.chat_id}`).emit('messageDeleted', { messageId }); // Если нужно уведомлять клиентов
 
     res.json({ success: true });
   } catch (e) {
@@ -349,23 +376,29 @@ app.delete('/api/messages/:id', auth, async (req, res) => {
   }
 });
 
-// Новый маршрут: отправка изображения
+// --- НАЧАЛО: Изменённый маршрут для отправки изображения ---
 app.post('/api/messages/image', auth, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Файл не загружен' });
   }
 
-  const { chatId, reply_to } = req.body; // добавим поддержку ответа на изображение
+  const { chatId, reply_to } = req.body;
   const userId = req.userId;
-  const filePath = `/uploads/${req.file.filename}`;
+
+  // --- Загрузка файла на сервер ---
+  const fileExtension = path.extname(req.file.originalname).toLowerCase();
+  const fileName = `img_${Date.now()}_${Math.round(Math.random() * 1E9)}${fileExtension}`; // Уникальное имя
 
   try {
-    // Сохраняем сообщение
+    // Загружаем файл на сервер и получаем публичный URL
+    const publicUrl = await uploadFileToServer(req.file.buffer, fileName);
+
+    // Сохраняем URL в базе данных
     const db = require('./db/database');
     const msgId = await new Promise((resolve, reject) => {
       db.run(
         'INSERT INTO messages (chat_id, user_id, text, reply_to) VALUES (?, ?, ?, ?)',
-        [chatId, userId, filePath, reply_to || null],
+        [chatId, userId, publicUrl, reply_to || null], // Сохраняем URL
         function (err) {
           if (err) reject(err);
           else resolve(this.lastID);
@@ -402,7 +435,7 @@ app.post('/api/messages/image', auth, upload.single('file'), async (req, res) =>
       id: msgId,
       chat_id: chatId,
       user_id: userId,
-      text: filePath,
+      text: publicUrl, // Отправляем URL
       created_at: new Date().toISOString(),
       name: sender.name,
       avatar: sender.avatar,
@@ -442,12 +475,14 @@ app.post('/api/messages/image', auth, upload.single('file'), async (req, res) =>
       }
     }
 
-    res.json({ success: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Ошибка сохранения изображения' });
+    res.json({ success: true, message: fullMsg }); // Возвращаем полное сообщение
+  } catch (uploadErr) {
+    console.error('Ошибка загрузки изображения на сервер:', uploadErr);
+    res.status(500).json({ error: 'Ошибка загрузки изображения: ' + uploadErr.message });
   }
 });
+// --- КОНЕЦ: Изменённый маршрут для отправки изображения ---
+
 
 // Сообщения
 app.get('/api/messages/:chatId', auth, async (req, res) => {
@@ -626,6 +661,9 @@ app.get('/api/settings', auth, (req, res) => {
   res.json({ theme: 'light', notifications: true });
 });
 
+// Обслуживаем папку uploads
+app.use('/uploads', express.static(path.join(__dirname, '../frontend/uploads')));
+
 // Обслуживаем фронтенд
 app.get('/*path', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/index.html'));
@@ -668,15 +706,15 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Пользователь отключён:', socket.userId);
   });
-  
+
   socket.on('typing', (data) => {
-  const { chatId, typing } = data;
-  // Отправляем событие всем в чате, кроме отправителя
-  socket.to(`chat_${chatId}`).emit('typing', {
-    userId: socket.userId,
-    typing
+    const { chatId, typing } = data;
+    // Отправляем событие всем в чате, кроме отправителя
+    socket.to(`chat_${chatId}`).emit('typing', {
+      userId: socket.userId,
+      typing
+    });
   });
-});
 });
 
 const PORT = process.env.PORT || 3000;

@@ -4,7 +4,7 @@ let currentReply = null;
 let currentChatId = null;
 let socket = null;
 const API_BASE = '/api'; // будет использовать тот же протокол и домен, что и сайт
-const WS_URL = window.location.origin; // например, https://your-domain.com
+const WS_URL = window.location.origin; // например, https://your-domain.com  
 let allChats = []; // хранит все чаты
 let isMobile = window.innerWidth <= 768;
 let isSidebarOpen = false;
@@ -18,6 +18,71 @@ const chatList = document.getElementById('chatList');
 const chatHeader = document.getElementById('chatHeader');
 const messagesContainer = document.getElementById('messages');
 const messageInput = document.getElementById('messageInput');
+
+// ========== DRAG & DROP для изображений ==========
+let isDraggingOverMessages = false;
+
+function handleDragOver(e) {
+  e.preventDefault(); // Необходимо для срабатывания drop
+  e.stopPropagation();
+  if (!currentChatId) return; // Не делать ничего, если чат не выбран
+  isDraggingOverMessages = true;
+  // Добавляем визуальный индикатор перетаскивания
+  messagesContainer.classList.add('drag-over');
+}
+
+function handleDragEnter(e) {
+  e.preventDefault(); // Необходимо для срабатывания drop
+  e.stopPropagation();
+  if (!currentChatId) return;
+  // Проверяем, действительно ли элемент перешёл внутрь (а не просто в дочерний)
+  const currentTarget = e.currentTarget;
+  const relatedTarget = e.relatedTarget;
+
+  if (!currentTarget.contains(relatedTarget)) {
+    isDraggingOverMessages = true;
+    messagesContainer.classList.add('drag-over');
+  }
+}
+
+function handleDragLeave(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  // Проверяем, действительно ли элемент покинул контейнер
+  const currentTarget = e.currentTarget;
+  const relatedTarget = e.relatedTarget;
+
+  if (!currentTarget.contains(relatedTarget)) {
+    isDraggingOverMessages = false;
+    // Убираем индикатор только если мы *точно* покинули область
+    // Но т.к. это сложно точно определить, уберем с задержкой
+    setTimeout(() => {
+      if (!isDraggingOverMessages) {
+         messagesContainer.classList.remove('drag-over');
+      }
+    }, 100); // Небольшая задержка, чтобы не мигало
+  }
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  messagesContainer.classList.remove('drag-over');
+  isDraggingOverMessages = false;
+
+  if (!currentChatId) return; // Не делать ничего, если чат не выбран
+
+  const files = e.dataTransfer.files;
+  if (files.length > 0) {
+    const file = files[0];
+    if (file.type.startsWith('image/')) {
+      handleFile(file);
+    } else {
+      alert('Можно отправлять только изображения');
+    }
+  }
+}
+// ========== /DRAG & DROP ==========
 
 // Проверка авторизации при загрузке
 document.addEventListener('DOMContentLoaded', () => {
@@ -133,6 +198,19 @@ async function initApp(token) {
   if ("Notification" in window && Notification.permission === "default") {
     Notification.requestPermission();
   }
+
+  // ========== ИНИЦИАЛИЗАЦИЯ DRAG & DROP ==========
+  // Убедитесь, что messagesContainer действительно тот, куда перетаскиваются файлы
+  // Обычно это контейнер с сообщениями, но может быть и другой элемент
+  if (messagesContainer) {
+    messagesContainer.addEventListener('dragover', handleDragOver);
+    messagesContainer.addEventListener('dragenter', handleDragEnter);
+    messagesContainer.addEventListener('dragleave', handleDragLeave);
+    messagesContainer.addEventListener('drop', handleDrop);
+  } else {
+     console.error('messagesContainer элемент не найден для drag & drop!');
+  }
+  // ========== /ИНИЦИАЛИЗАЦИЯ DRAG & DROP ==========
 
   socket = io(WS_URL, {
     auth: { token }
@@ -419,6 +497,22 @@ function handleFileSelect(e) {
   const input = document.getElementById('messageInput');
   input.placeholder = `📷 ${file.name} (нажмите Отправить)`;
   input.value = '';
+  input.focus(); // Фокус на поле ввода
+}
+
+// Изменённая функция handleFile для использования pendingFile
+function handleFile(file) {
+  if (!file.type.startsWith('image/')) {
+    alert('Пожалуйста, выберите изображение');
+    return;
+  }
+  // Устанавливаем файл как "ожидающий отправку", как это делает handleFileSelect
+  pendingFile = file;
+  const input = document.getElementById('messageInput');
+  input.placeholder = `📷 ${file.name} (нажмите Отправить)`;
+  input.value = '';
+  // Фокус на поле ввода, чтобы было понятно, что файл выбран
+  input.focus();
 }
 
 async function sendMessage() {
@@ -512,7 +606,7 @@ function showFileUploadProgress(fileId, fileName) {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const el = document.createElement('div');
   el.className = `message out`;
-  el.setAttribute('data-message-id', `upload-${fileId}`); // уникальный ID
+  el.setAttribute('data-message-id', `upload-${fileId}`);
   el.innerHTML = `
     <div class="msg-bubble">
       <div class="upload-progress">
@@ -749,7 +843,13 @@ async function openAttachmentsModal(chatId) {
       headers: { Authorization: `Bearer ${token}` }
     });
     const messages = await res.json();
-    const images = messages.filter(msg => msg.text.startsWith('/uploads/'));
+
+    // Фильтруем сообщения, текст которых является URL-адресом изображения
+    // Теперь проверяем и http://, и /uploads/
+    const images = messages.filter(msg => (
+      (msg.text.startsWith('http') || msg.text.startsWith('/uploads/')) &&
+      msg.text.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)
+    ));
 
     const grid = document.getElementById('attachmentsGrid');
     grid.innerHTML = '';
@@ -759,11 +859,11 @@ async function openAttachmentsModal(chatId) {
     } else {
       images.forEach(msg => {
         const img = document.createElement('img');
-        img.src = `https://nee-chat.cloudpub.ru${msg.text}`;
+        img.src = msg.text; // Используем URL из сообщения
         img.onclick = () => {
           const fakeImg = {
             dataset: {
-              fullsize: `https://nee-chat.cloudpub.ru${msg.text}`,
+              fullsize: msg.text,
               sender: msg.name || 'Пользователь',
               timestamp: msg.created_at
             }
@@ -774,50 +874,30 @@ async function openAttachmentsModal(chatId) {
         grid.appendChild(img);
       });
     }
-
     document.getElementById('attachmentsModal').classList.add('active');
   } catch (e) {
+    console.error('Ошибка загрузки вложений:', e);
     alert('Не удалось загрузить вложения');
   }
 }
 
-let isDragging = false;
 
-function onDragOver(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  if (!currentChatId) return;
-  isDragging = true;
-  document.querySelector('.main').classList.add('drag-over');
-}
+// Убираем старые функции onDragOver, onDragLeave, onDrop
+// messageInput.addEventListener('paste', (e) => {
+//   if (!currentChatId) return;
+//   const items = e.clipboardData.items;
+//   for (let i = 0; i < items.length; i++) {
+//     const item = items[i];
+//     if (item.type.startsWith('image/')) {
+//       const file = item.getAsFile();
+//       handleFile(file);
+//       e.preventDefault();
+//       break;
+//     }
+//   }
+// });
 
-function onDragLeave(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  isDragging = false;
-  setTimeout(() => {
-    if (!isDragging) {
-      document.querySelector('.main').classList.remove('drag-over');
-    }
-  }, 100);
-}
-
-function onDrop(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  document.querySelector('.main').classList.remove('drag-over');
-  if (!currentChatId) return;
-  const files = e.dataTransfer.files;
-  if (files.length > 0) {
-    const file = files[0];
-    if (file.type.startsWith('image/')) {
-      handleFile(file);
-    } else {
-      alert('Можно отправлять только изображения');
-    }
-  }
-}
-
+// Обработка вставки изображения из буфера обмена
 messageInput.addEventListener('paste', (e) => {
   if (!currentChatId) return;
   const items = e.clipboardData.items;
@@ -831,17 +911,6 @@ messageInput.addEventListener('paste', (e) => {
     }
   }
 });
-
-function handleFile(file) {
-  if (!file.type.startsWith('image/')) {
-    alert('Пожалуйста, выберите изображение');
-    return;
-  }
-  pendingFile = file;
-  const input = document.getElementById('messageInput');
-  input.placeholder = `📷 ${file.name} (нажмите Отправить)`;
-  input.value = '';
-}
 
 async function loadMessages(chatId) {
   const token = localStorage.getItem('token');
@@ -907,16 +976,12 @@ function cancelReply() {
 function addMessageToUI(msg) {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const isOwn = msg.user_id == currentUser.id;
-
   const el = document.createElement('div');
   el.className = `message ${isOwn ? 'out' : 'in'}`;
   el.setAttribute('data-message-id', msg.id);
 
-  const isImage = msg.text.startsWith('/uploads/');
-
   let authorHtml = '';
   let avatarHtml = '';
-
   if (!isOwn) {
     authorHtml = `<div class="message-author">${escapeHtml(msg.name || 'Пользователь')}</div>`;
     const avatar = msg.avatar || '👤';
@@ -939,63 +1004,69 @@ function addMessageToUI(msg) {
   }
 
   let contentHtml = '';
-  if (isImage) {
-    const imgUrl = `https://nee-chat.cloudpub.ru${msg.text}`;
-    contentHtml = `
-      <img 
-        src="${imgUrl}" 
-        class="message-image" 
-        data-fullsize="${imgUrl}"
-        data-sender="${escapeHtml(msg.name || 'Пользователь')}"
-        data-timestamp="${msg.created_at}"
-        onclick="openImageModal(this)"
-      >
-    `;
-  } else if (msg.text.match(/\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i)) {
-    // Это ссылка на медиафайл
-    const mediaUrl = msg.text;
-    if (mediaUrl.match(/\.(mp4|webm)$/i)) {
+  let timeHtml = ''; // Время теперь отдельно
+
+  // --- НАЧАЛО: УНИВЕРСАЛЬНАЯ ЛОГИКА ДЛЯ ИЗОБРАЖЕНИЙ/ВИДЕО ---
+  // Проверяем, является ли текст сообщения URL-адресом изображения или видео
+  // Теперь проверяем и http://, и /uploads/
+  const isMediaUrl = (
+    msg.text.startsWith('http') || 
+    msg.text.startsWith('/uploads/')
+  ) && (
+    msg.text.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) || // Изображения
+    msg.text.match(/\.(mp4|webm)(\?.*)?$/i)                 // Видео
+  );
+
+  if (isMediaUrl) {
+    // Это медиафайл (изображение или видео)
+    if (msg.text.match(/\.(mp4|webm)(\?.*)?$/i)) {
       // Видео
       contentHtml = `
         <video controls class="message-video" poster="https://via.placeholder.com/300x200?text=Видео">
-          <source src="${mediaUrl}" type="video/mp4">
+          <source src="${msg.text}" type="video/mp4">
           Ваш браузер не поддерживает видео.
         </video>
       `;
     } else {
       // Изображение
       contentHtml = `
-        <img 
-          src="${mediaUrl}" 
-          class="message-image" 
-          data-fullsize="${mediaUrl}"
+        <img
+          src="${msg.text}"
+          class="message-image"
+          data-fullsize="${msg.text}"
           data-sender="${escapeHtml(msg.name || 'Пользователь')}"
           data-timestamp="${msg.created_at}"
           onclick="openImageModal(this)"
         >
       `;
     }
+    // Время отображаем под изображением/видео
+    timeHtml = `<small class="msg-time">${new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>`;
   } else {
+    // Обычный текст
     contentHtml = `<div class="msg-text">${escapeHtml(msg.text)}</div>`;
+    // Время отображаем после текста
+    timeHtml = `<small class="msg-time">${new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>`;
+  }
+  // --- КОНЕЦ: УНИВЕРСАЛЬНАЯ ЛОГИКА ---
+
+  let deleteBtn = '';
+  if (isOwn) {
+    deleteBtn = `<button class="delete-btn" onclick="deleteMessage(${msg.id})">×</button>`;
   }
 
-    let deleteBtn = '';
-    if (isOwn) {
-      deleteBtn = `<button class="delete-btn" onclick="deleteMessage(${msg.id})">×</button>`;
-    }
-
-  const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    el.innerHTML = `
-      ${avatarHtml}
-      <div class="msg-bubble">
-        ${authorHtml}
-        ${replyHtml}
-        ${contentHtml}
-        ${isImage ? '' : `<small class="msg-time">${time}</small>`}
-      </div>
-      ${deleteBtn}
-    `;
+  // --- НАЧАЛО: НОВАЯ СТРУКТУРЫ HTML ---
+  el.innerHTML = `
+    ${avatarHtml}
+    <div class="msg-bubble">
+      ${authorHtml}
+      ${replyHtml}
+      ${contentHtml}
+      ${timeHtml}
+    </div>
+    ${deleteBtn}
+  `;
+  // --- КОНЕЦ: НОВАЯ СТРУКТУРЫ HTML ---
 
   el.addEventListener('dblclick', (e) => {
     if (e.target.closest('.delete-btn, .delete-btn *')) return;
@@ -1070,9 +1141,7 @@ function closeImageModal() {
   document.body.style.overflow = '';
 }
 
-// ========== ОТПРАВКА СООБЩЕНИЯ ==========
 
-// ========== ВСПОМОГАТЕЛЬНЫЕ ==========
 function escapeHtml(text) {
   const map = {
     '&': '&amp;',
